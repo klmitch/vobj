@@ -31,7 +31,7 @@ def readfile(filename):
 
 setup(
     name='vobj',
-    version='0.1.0',
+    version='0.1.1',
     author='Kevin L. Mitchell',
     author_email='kevin.mitchell@rackspace.com',
     url='https://github.com/klmitch/vobj',
