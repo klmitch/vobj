@@ -1,0 +1,8 @@
+/build
+/.coverage
+/cov_html
+/dist
+/.tox
+/vobj.egg-info
+*.log
+*.pyc
