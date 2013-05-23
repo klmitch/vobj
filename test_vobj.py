@@ -959,6 +959,26 @@ class TestVObject(unittest2.TestCase):
 
     @mock.patch.object(vobj, '_call_upgrader',
                        side_effect=fake_call_upgrader)
+    def test_setstate_state_badversion(self, mock_call_upgrader):
+        class TestVObject(vobj.VObject):
+            pass
+        sch = mock.Mock(__setstate__=mock.Mock())
+        TestVObject.__vers_schemas__ = [
+            mock.Mock(__version__=1),
+            mock.Mock(__version__=2),
+            mock.Mock(return_value=sch, __version__=3),
+        ]
+        vobject = TestVObject()
+
+        self.assertRaises(TypeError, vobject.__setstate__, {
+            '__version__': "bad",
+            'attr': 'value',
+        })
+        self.assertFalse(mock_call_upgrader.called)
+        self.assertFalse(sch.__setstate__.called)
+
+    @mock.patch.object(vobj, '_call_upgrader',
+                       side_effect=fake_call_upgrader)
     def test_setstate_exact(self, mock_call_upgrader):
         class TestVObject(vobj.VObject):
             pass

@@ -707,7 +707,8 @@ class VObject(object):
         if '__version__' not in state:
             raise TypeError("schema version not available in state")
         version = state['__version__']
-        if version < 1 or version > schema_vers:
+        if (not isinstance(version, (int, long)) or
+                version < 1 or version > schema_vers):
             raise TypeError("invalid schema version %s in state" % version)
 
         # Now, start with the desired schema and build up a pipeline
