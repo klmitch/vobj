@@ -28,7 +28,8 @@ class Attribute(object):
     Describe an attribute.
     """
 
-    def __init__(self, default=_unset, validate=lambda x: x):
+    def __init__(self, default=_unset, validate=lambda x: x,
+                 getstate=lambda x: x):
         """
         Initialize an ``Attribute`` object.
 
@@ -40,10 +41,16 @@ class Attribute(object):
                          value into the desired type, which it should
                          return.  Can raise ``TypeError`` or
                          ``ValueError`` if the value is invalid.
+        :param getstate: A function that serializes the attribute
+                         value when the versioned object state is
+                         requested.  Should convert the attribute
+                         value into a form acceptable to the
+                         ``validate`` function.
         """
 
         self.default = default
         self.validate = validate
+        self.getstate = getstate
 
 
 class SchemaMeta(type):
@@ -419,8 +426,10 @@ class Schema(object):
             raise RuntimeError("%r is uninitialized" % self.__class__.__name__)
 
         # Copy __vers_values__ and add the __version__ to it
-        state = self.__vers_values__.copy()
-        state['__version__'] = self.__version__
+        state = dict(__version__=self.__version__)
+        for key, value in self.__vers_values__.items():
+            attr = self.__vers_attrs__[key]
+            state[key] = attr.getstate(value)
 
         return state
 

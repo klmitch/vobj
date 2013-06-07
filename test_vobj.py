@@ -28,12 +28,16 @@ class TestAttribute(unittest2.TestCase):
         self.assertEqual(attr.default, vobj._unset)
         self.assertTrue(callable(attr.validate))
         self.assertEqual(attr.validate('spam'), 'spam')
+        self.assertTrue(callable(attr.getstate))
+        self.assertEqual(attr.getstate('spam'), 'spam')
 
     def test_init(self):
-        attr = vobj.Attribute('default', validate='validate')
+        attr = vobj.Attribute('default', validate='validate',
+                              getstate='getstate')
 
         self.assertEqual(attr.default, 'default')
         self.assertEqual(attr.validate, 'validate')
+        self.assertEqual(attr.getstate, 'getstate')
 
 
 class TestSchemaMeta(unittest2.TestCase):
@@ -526,12 +530,12 @@ class TestSchema(unittest2.TestCase):
         class TestSchema(vobj.Schema):
             __version__ = 1
             attr1 = vobj.Attribute()
-            attr2 = vobj.Attribute()
+            attr2 = vobj.Attribute(getstate=str)
         sch = TestSchema(dict(attr1=1, attr2=2))
 
         state = sch.__getstate__()
 
-        self.assertEqual(state, dict(__version__=1, attr1=1, attr2=2))
+        self.assertEqual(state, dict(__version__=1, attr1=1, attr2='2'))
         self.assertEqual(sch.__vers_values__, dict(attr1=1, attr2=2))
 
     def test_setstate_abstract(self):
