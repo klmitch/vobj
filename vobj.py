@@ -531,6 +531,15 @@ class Schema(object):
         super(Schema, self).__setattr__('__vers_values__', values)
 
 
+class _EmptyClass(object):
+    """
+    An empty class.  This is used by ``VObject.from_dict()`` when
+    constructing a ``VObject`` subclass from a dictionary.
+    """
+
+    pass
+
+
 class VObjectMeta(type):
     """
     A metaclass for versioned objects.  A ``VObject`` subclass
@@ -581,15 +590,6 @@ class VObjectMeta(type):
         namespace['__version__'] = len(schemas)
 
         return super(VObjectMeta, mcs).__new__(mcs, name, bases, namespace)
-
-
-class _EmptyClass(object):
-    """
-    An empty class.  This is used by ``VObject.from_dict()`` when
-    constructing a ``VObject`` subclass from a dictionary.
-    """
-
-    pass
 
 
 def _call_upgrader(upgrader, state):
