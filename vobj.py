@@ -1166,6 +1166,54 @@ class SmartVersion(object):
         return avail
 
 
+class Downgrader(object):
+    """
+    Represent a downgrader that will be called to obtain a specific
+    schema.  This is called to regenerate a cached older-version
+    object.
+    """
+
+    def __init__(self, downgrader, schema):
+        """
+        Initialize a ``Downgrader``.
+
+        :param downgrader: The class method that will be called.
+        :param schema: The schema class to generate.
+        """
+
+        self.downgrader = downgrader
+        self.schema = schema
+
+    def __call__(self, state):
+        """
+        Called to regenerate the ``Schema`` object corresponding to an
+        older version of the versioned object.
+
+        :param state: A dictionary containing the current state.  This
+                      dictionary will be mutated.
+
+        :returns: A ``Schema`` object.
+        """
+
+        # Drop the __version__; we know state is a copy, so this is
+        # safe
+        del state['__version__']
+
+        # Call the downgrader
+        state = self.downgrader(state)
+
+        # Update the version in the resultant state
+        state['__version__'] = self.schema.__version__
+
+        # Now, let's construct the Schema object that will store this
+        # state
+        values = self.schema()
+        values.__setstate__(state)
+
+        # Return the result
+        return values
+
+
 class VObjectMeta(type):
     """
     A metaclass for versioned objects.  A ``VObject`` subclass
@@ -1210,12 +1258,23 @@ class VObjectMeta(type):
         if set(versions.keys()) != set(range(1, len(versions) + 1)):
             raise TypeError("Gaps are present in the schema versions")
 
-        # Condense versions into a list and store it in the namespace
+        # Condense versions into a list
         schemas = [v for k, v in sorted(versions.items(), key=lambda x: x[0])]
+        last_schema = schemas[-1] if schemas else None
+
+        # Set up downgraders
+        if last_schema:
+            downgraders = dict(
+                (vers, Downgrader(down, versions[vers]))
+                for vers, down in last_schema.__vers_downgraders__.items()
+            )
+        else:
+            downgraders = {}
+
+        # Now make our additions to the namespace
         namespace['__vers_schemas__'] = schemas
-        namespace['__version__'] = SmartVersion(len(schemas),
-                                                schemas[-1] if schemas
-                                                else None)
+        namespace['__vers_downgraders__'] = downgraders
+        namespace['__version__'] = SmartVersion(len(schemas), last_schema)
 
         return super(VObjectMeta, mcs).__new__(mcs, name, bases, namespace)
 
@@ -1240,30 +1299,6 @@ def _call_upgrader(upgrader, state):
 
     # Now, update the version in the resultant state
     state['__version__'] = upgrader.im_self.__version__
-
-    return state
-
-
-def _call_downgrader(downgrader, state):
-    """
-    Call a downgrader.  Handles updating of the state's "__version__"
-    key.
-
-    :param downgrader: The downgrader method.
-    :param state: The state dictionary.
-
-    :returns: The downgraded state dictionary.
-    """
-
-    # Copy the state and drop its __version__...
-    state = state.copy()
-    del state['__version__']
-
-    # Call the downgrader
-    state = downgrader(state)
-
-    # Now, update the version in the resultant state
-    state['__version__'] = downgrader.__vers_downgrader__
 
     return state
 

@@ -903,6 +903,29 @@ class TestSmartVersion(unittest2.TestCase):
         self.assertEqual(result, set([3, 4]))
 
 
+class TestDowngraderClass(unittest2.TestCase):
+    def test_init(self):
+        dg = vobj.Downgrader('downgrader', 'schema')
+
+        self.assertEqual(dg.downgrader, 'downgrader')
+        self.assertEqual(dg.schema, 'schema')
+
+    def test_call(self):
+        downgrader = mock.Mock(return_value=dict(a=3, b=2, c=1))
+        values = mock.Mock(__setstate__=mock.Mock())
+        schema = mock.Mock(__version__=3, return_value=values)
+        dg = vobj.Downgrader(downgrader, schema)
+        state = dict(__version__=5, a=1, b=2, c=3)
+
+        result = dg(state)
+
+        self.assertEqual(result, values)
+        downgrader.assert_called_once_with(dict(a=1, b=2, c=3))
+        schema.assert_called_once_with()
+        values.__setstate__.assert_called_once_with(
+            dict(__version__=3, a=3, b=2, c=1))
+
+
 class TestVObjectMeta(unittest2.TestCase):
     def test_empty(self):
         namespace = {
@@ -963,7 +986,8 @@ class TestVObjectMeta(unittest2.TestCase):
         self.assertRaises(TypeError, vobj.VObjectMeta, 'TestVObject',
                           (object,), namespace)
 
-    def test_normal(self):
+    @mock.patch.object(vobj, 'Downgrader', side_effect=lambda x, y: (x, y))
+    def test_normal(self, mock_Downgrader):
         class TestSchema1(vobj.Schema):
             __version__ = 1
 
@@ -984,8 +1008,62 @@ class TestVObjectMeta(unittest2.TestCase):
         result = vobj.VObjectMeta('TestVObject', (object,), namespace)
 
         self.assertEqual(result.__vers_schemas__, [TestSchema1, TestSchema2])
+        self.assertEqual(result.__vers_downgraders__, {})
         self.assertIsInstance(result.__version__, vobj.SmartVersion)
         self.assertEqual(result.__version__, 2)
+        self.assertFalse(mock_Downgrader.called)
+
+    @mock.patch.object(vobj, 'Downgrader', side_effect=lambda x, y: (x, y))
+    def test_downgraders(self, mock_Downgrader):
+        class TestSchema1(vobj.Schema):
+            __version__ = 1
+
+        class TestSchema2(vobj.Schema):
+            __version__ = 2
+
+            @vobj.upgrader
+            def upgrader(cls, old):
+                pass
+
+        class TestSchema3(vobj.Schema):
+            __version__ = 3
+
+            @vobj.upgrader
+            def upgrader(cls, old):
+                pass
+
+            @vobj.downgrader(1)
+            def downgrader_1(cls, new):
+                pass
+
+            @vobj.downgrader(2)
+            def downgrader_2(cls, new):
+                pass
+
+        namespace = {
+            '__module__': 'test_vobject',
+            'Schema1': TestSchema1,
+            'Schema2': TestSchema2,
+            'Schema3': TestSchema3,
+        }
+
+        result = vobj.VObjectMeta('TestVObject', (object,), namespace)
+
+        self.assertEqual(result.__vers_schemas__, [
+            TestSchema1,
+            TestSchema2,
+            TestSchema3,
+        ])
+        self.assertEqual(result.__vers_downgraders__, {
+            1: (TestSchema3.downgrader_1, TestSchema1),
+            2: (TestSchema3.downgrader_2, TestSchema2),
+        })
+        self.assertIsInstance(result.__version__, vobj.SmartVersion)
+        self.assertEqual(result.__version__, 3)
+        mock_Downgrader.assert_has_calls([
+            mock.call(TestSchema3.downgrader_1, TestSchema1),
+            mock.call(TestSchema3.downgrader_2, TestSchema2),
+        ])
 
 
 class TestCallUpgrader(unittest2.TestCase):
@@ -999,19 +1077,6 @@ class TestCallUpgrader(unittest2.TestCase):
         self.assertEqual(state, dict(__version__=2, a=1, b=2, c=3))
         self.assertEqual(result, dict(__version__=3, a=3, b=2, c=1))
         upgrader.assert_called_once_with(dict(a=1, b=2, c=3))
-
-
-class TestCallDowngrader(unittest2.TestCase):
-    def test_call(self):
-        state = dict(__version__=2, a=1, b=2, c=3)
-        downgrader = mock.Mock(__vers_downgrader__=1,
-                               return_value=dict(a=3, b=2, c=1))
-
-        result = vobj._call_downgrader(downgrader, state)
-
-        self.assertEqual(state, dict(__version__=2, a=1, b=2, c=3))
-        self.assertEqual(result, dict(__version__=1, a=3, b=2, c=1))
-        downgrader.assert_called_once_with(dict(a=1, b=2, c=3))
 
 
 def fake_call_upgrader(upgrader, state):
