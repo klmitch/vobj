@@ -984,6 +984,7 @@ class TestVObjectMeta(unittest2.TestCase):
         result = vobj.VObjectMeta('TestVObject', (object,), namespace)
 
         self.assertEqual(result.__vers_schemas__, [TestSchema1, TestSchema2])
+        self.assertIsInstance(result.__version__, vobj.SmartVersion)
         self.assertEqual(result.__version__, 2)
 
 
