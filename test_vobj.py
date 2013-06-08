@@ -331,6 +331,7 @@ class TestSchema(unittest2.TestCase):
         sch = TestSchema()
 
         self.assertEqual(sch.__vers_values__, None)
+        self.assertEqual(sch.__vers_notify__, None)
 
     def test_required_args(self):
         class TestSchema(vobj.Schema):
@@ -438,6 +439,22 @@ class TestSchema(unittest2.TestCase):
 
         validator.assert_called_once_with('new_value')
         self.assertEqual(sch.__vers_values__, dict(attr='validated'))
+
+    def test_setattr_notify(self):
+        validator = mock.Mock(return_value='validated')
+        notify = mock.Mock()
+
+        class TestSchema(vobj.Schema):
+            __version__ = 1
+            attr = vobj.Attribute('default', validate=validator)
+        sch = TestSchema({})
+        sch.__vers_notify__ = notify
+
+        sch.attr = 'new_value'
+
+        validator.assert_called_once_with('new_value')
+        self.assertEqual(sch.__vers_values__, dict(attr='validated'))
+        notify.assert_called_once_with()
 
     def test_setattr_nosuch(self):
         class TestSchema(vobj.Schema):

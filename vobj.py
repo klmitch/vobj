@@ -181,6 +181,7 @@ class SchemaMeta(type):
         namespace['__vers_upgraders__'] = {}
         namespace['__vers_downgraders__'] = {}
         namespace['__vers_values__'] = None
+        namespace['__vers_notify__'] = None
 
         # Construct the class
         cls = super(SchemaMeta, mcs).__new__(mcs, name, bases, namespace)
@@ -404,6 +405,10 @@ class Schema(object):
         if name in self.__vers_attrs__:
             value = self.__vers_attrs__[name].validate(value)
             self.__vers_values__[name] = value
+
+            # Send a notification on update
+            if self.__vers_notify__:
+                self.__vers_notify__()
         else:
             super(Schema, self).__setattr__(name, value)
 
