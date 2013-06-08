@@ -213,6 +213,54 @@ class TestSchemaMeta(unittest2.TestCase):
         self.assertRaises(TypeError, vobj.SchemaMeta, 'TestSchema',
                           (object,), namespace)
 
+    def test_downgrader_abstract(self):
+        namespace = {
+            '__module__': 'test_vobject',
+            'fake_downgrader': mock.Mock(__vers_downgrader__=1),
+        }
+
+        self.assertRaises(TypeError, vobj.SchemaMeta, 'TestSchema',
+                          (object,), namespace)
+
+    def test_downgrader_version1(self):
+        namespace = {
+            '__module__': 'test_vobject',
+            '__version__': 1,
+            'fake_downgrader': mock.Mock(__vers_downgrader__=1),
+        }
+
+        self.assertRaises(TypeError, vobj.SchemaMeta, 'TestSchema',
+                          (object,), namespace)
+
+    def test_downgrader_later(self):
+        namespace = {
+            '__module__': 'test_vobject',
+            '__version__': 2,
+            'fake_upgrader': mock.Mock(__vers_upgrader__=None),
+            'fake_downgrader': mock.Mock(__vers_downgrader__=3),
+        }
+
+        self.assertRaises(TypeError, vobj.SchemaMeta, 'TestSchema',
+                          (object,), namespace)
+
+    def test_downgrader(self):
+        namespace = {
+            '__module__': 'test_vobject',
+            '__version__': 3,
+            'fake_upgrader': mock.Mock(__vers_upgrader__=None),
+            'fake_downgrader1': mock.Mock(__vers_downgrader__=1),
+            'fake_downgrader2': mock.Mock(__vers_downgrader__=2),
+        }
+
+        result = vobj.SchemaMeta('TestSchema', (object,), namespace)
+
+        self.assertIsInstance(result.__dict__['fake_downgrader1'], classmethod)
+        self.assertIsInstance(result.__dict__['fake_downgrader2'], classmethod)
+        self.assertEqual(result.__vers_downgraders__, {
+            1: result.fake_downgrader1,
+            2: result.fake_downgrader2,
+        })
+
     def test_values(self):
         namespace = {
             '__module__': 'test_vobject',
@@ -249,6 +297,21 @@ class TestUpgrader(unittest2.TestCase):
 
     def test_other_arg(self):
         self.assertRaises(TypeError, vobj.upgrader, 'other')
+
+
+class TestDowngrader(unittest2.TestCase):
+    def test_int_arg(self):
+        @vobj.downgrader(5)
+        def test():
+            pass
+
+        self.assertEqual(test.__vers_downgrader__, 5)
+
+    def test_int_arg_low(self):
+        self.assertRaises(TypeError, vobj.downgrader, 0)
+
+    def test_other_arg(self):
+        self.assertRaises(TypeError, vobj.downgrader, 'other')
 
 
 class EmptyClass(object):
@@ -683,6 +746,19 @@ class TestCallUpgrader(unittest2.TestCase):
         self.assertEqual(state, dict(__version__=2, a=1, b=2, c=3))
         self.assertEqual(result, dict(__version__=3, a=3, b=2, c=1))
         upgrader.assert_called_once_with(dict(a=1, b=2, c=3))
+
+
+class TestCallDowngrader(unittest2.TestCase):
+    def test_call(self):
+        state = dict(__version__=2, a=1, b=2, c=3)
+        downgrader = mock.Mock(__vers_downgrader__=1,
+                               return_value=dict(a=3, b=2, c=1))
+
+        result = vobj._call_downgrader(downgrader, state)
+
+        self.assertEqual(state, dict(__version__=2, a=1, b=2, c=3))
+        self.assertEqual(result, dict(__version__=1, a=3, b=2, c=1))
+        downgrader.assert_called_once_with(dict(a=1, b=2, c=3))
 
 
 def fake_call_upgrader(upgrader, state):

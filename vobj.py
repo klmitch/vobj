@@ -77,6 +77,7 @@ class SchemaMeta(type):
         version = namespace.get('__version__')
         attrs = {}
         upgraders = {}
+        downgraders = {}
         properties = set()
 
         # Inherit attributes and version from base classes
@@ -142,6 +143,28 @@ class SchemaMeta(type):
 
                 # Turn the upgrade method into a class method
                 namespace[key] = classmethod(value)
+            elif hasattr(value, '__vers_downgrader__'):
+                # Downgraders aren't permitted on abstract Schemas or
+                # the version 1 schema
+                if version is None:
+                    raise TypeError("Downgraders prohibited on "
+                                    "abstract schemas")
+                elif version - 1 == 0:
+                    raise TypeError("Cannot downgrade from version 1")
+
+                # Determine the downgrader's version
+                downgrade_version = value.__vers_downgrader__
+
+                # Sanity-check that we aren't trying to "downgrade" to
+                # a newer version
+                if downgrade_version >= version:
+                    raise TypeError("Cannot downgrade to a newer version")
+
+                # Associate downgrader with the appropriate old version
+                downgraders[downgrade_version] = key
+
+                # Turn the downgrade method into a class method
+                namespace[key] = classmethod(value)
 
         # Make sure we have enough upgraders
         if (version is not None and version > 1 and
@@ -154,6 +177,7 @@ class SchemaMeta(type):
         namespace['__vers_attrs__'] = attrs
         namespace['__vers_properties__'] = properties
         namespace['__vers_upgraders__'] = {}
+        namespace['__vers_downgraders__'] = {}
         namespace['__vers_values__'] = None
 
         # Construct the class
@@ -164,6 +188,10 @@ class SchemaMeta(type):
         # until the class has been constructed
         for version, key in upgraders.items():
             cls.__vers_upgraders__[version] = getattr(cls, key)
+
+        # Do the same construction for the downgraders...
+        for version, key in downgraders.items():
+            cls.__vers_downgraders__[version] = getattr(cls, key)
 
         return cls
 
@@ -216,6 +244,31 @@ def upgrader(version=None):
     else:
         # Called with an invalid version
         raise TypeError("Invalid upgrader version number %r" % version)
+
+
+def downgrader(version):
+    """
+    A decorator for marking a method as a downgrader to an older
+    version of a given object.  Note that downgrader methods are
+    implicitly class methods.  Also note that downgraders take a
+    single argument--a dictionary of attributes--and must return a
+    dictionary.  Downgraders may modify the argument in place, if
+    desired.
+
+    :param version: The version number the downgrader returns the
+                    attributes for.  Must be provided.
+    """
+
+    def decorator(func):
+        # Save the version to downgrade to
+        func.__vers_downgrader__ = version
+        return func
+
+    # Sanity-check the version number
+    if not isinstance(version, (int, long)) or version < 1:
+        raise TypeError("Invalid downgrader version number %r" % version)
+
+    return decorator
 
 
 class Schema(object):
@@ -559,6 +612,30 @@ def _call_upgrader(upgrader, state):
 
     # Now, update the version in the resultant state
     state['__version__'] = upgrader.im_self.__version__
+
+    return state
+
+
+def _call_downgrader(downgrader, state):
+    """
+    Call a downgrader.  Handles updating of the state's "__version__"
+    key.
+
+    :param downgrader: The downgrader method.
+    :param state: The state dictionary.
+
+    :returns: The downgraded state dictionary.
+    """
+
+    # Copy the state and drop its __version__...
+    state = state.copy()
+    del state['__version__']
+
+    # Call the downgrader
+    state = downgrader(state)
+
+    # Now, update the version in the resultant state
+    state['__version__'] = downgrader.__vers_downgrader__
 
     return state
 
