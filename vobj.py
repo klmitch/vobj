@@ -1309,7 +1309,29 @@ class VObject(object):
         values = self.__vers_schemas__[-1](kwargs)
 
         # Save the values
+        self.__vers_init__(values)
+
+    def __vers_init__(self, values, version=None):
+        """
+        Initialize a ``VObject`` instance.  This contains all the
+        common initialization routines, including those called by such
+        methods as ``__setstate__()``, when ``__init__()`` doesn't get
+        called.
+
+        :param values: An initialized ``Schema`` object.
+        :param version: The version to advertise in ``__version__``.
+                        If not specified, the version of the latest
+                        schema will be used.
+        """
+
+        # Save the values
         super(VObject, self).__setattr__('__vers_values__', values)
+
+        # Set up the local version
+        if not version:
+            version = int(self.__version__)
+        version = SmartVersion(version, self.__vers_schemas__[-1], self)
+        super(VObject, self).__setattr__('__version__', version)
 
     def __getattr__(self, name):
         """
@@ -1455,7 +1477,7 @@ class VObject(object):
 
         # We now have an appropriate state; generate the Schema
         # object and set our state
-        super(VObject, self).__setattr__('__vers_values__', target())
+        self.__vers_init__(target())
         self.__vers_values__.__setstate__(state)
 
     to_dict = __getstate__

@@ -1024,7 +1024,8 @@ class TestVObject(unittest2.TestCase):
     def test_abstract_constructor(self):
         self.assertRaises(TypeError, vobj.VObject)
 
-    def test_init(self):
+    @mock.patch.object(vobj.VObject, '__vers_init__')
+    def test_init(self, mock_vers_init):
         class TestVObject(vobj.VObject):
             pass
         TestVObject.__vers_schemas__ = [
@@ -1034,10 +1035,44 @@ class TestVObject(unittest2.TestCase):
 
         result = TestVObject(a=1, b=2, c=3)
 
-        self.assertEqual(result.__vers_values__, {'__version__': 2})
+        mock_vers_init.assert_called_once_with({'__version__': 2})
         self.assertFalse(TestVObject.__vers_schemas__[0].called)
         TestVObject.__vers_schemas__[1].assert_called_once_with(
             dict(a=1, b=2, c=3))
+
+    @mock.patch.object(vobj, 'SmartVersion', return_value='smart version')
+    def test_vers_init_noversion(self, mock_SmartVersion):
+        vobject = EmptyClass()
+        vobject.__class__ = vobj.VObject
+        super(vobj.VObject, vobject).__setattr__('__version__', 2)
+        super(vobj.VObject, vobject).__setattr__('__vers_schemas__', [
+            mock.Mock(return_value={'__version__': 1}),
+            mock.Mock(return_value={'__version__': 2}),
+        ])
+
+        vobject.__vers_init__('values')
+
+        self.assertEqual(vobject.__vers_values__, 'values')
+        self.assertEqual(vobject.__version__, 'smart version')
+        mock_SmartVersion.assert_called_once_with(
+            2, vobject.__vers_schemas__[-1], vobject)
+
+    @mock.patch.object(vobj, 'SmartVersion', return_value='smart version')
+    def test_vers_init_withversion(self, mock_SmartVersion):
+        vobject = EmptyClass()
+        vobject.__class__ = vobj.VObject
+        super(vobj.VObject, vobject).__setattr__('__version__', 2)
+        super(vobj.VObject, vobject).__setattr__('__vers_schemas__', [
+            mock.Mock(return_value={'__version__': 1}),
+            mock.Mock(return_value={'__version__': 2}),
+        ])
+
+        vobject.__vers_init__('values', version=5)
+
+        self.assertEqual(vobject.__vers_values__, 'values')
+        self.assertEqual(vobject.__version__, 'smart version')
+        mock_SmartVersion.assert_called_once_with(
+            5, vobject.__vers_schemas__[-1], vobject)
 
     def test_getattr(self):
         class TestVObject(vobj.VObject):
