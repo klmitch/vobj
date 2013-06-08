@@ -125,22 +125,22 @@ class SchemaMeta(type):
                 if version is None:
                     raise TypeError("Upgraders prohibited on abstract schemas")
                 elif version - 1 == 0:
-                    raise TypeError("Cannot update to version 1")
+                    raise TypeError("Cannot upgrade to version 1")
 
                 # Determine the upgrader's version
-                update_version = value.__vers_upgrader__
-                if update_version is None:
-                    update_version = version - 1
+                upgrade_version = value.__vers_upgrader__
+                if upgrade_version is None:
+                    upgrade_version = version - 1
 
-                # Sanity-check that we aren't trying to "update" from
+                # Sanity-check that we aren't trying to "upgrade" from
                 # a newer version
-                if update_version >= version:
-                    raise TypeError("Cannot update from a newer version")
+                if upgrade_version >= version:
+                    raise TypeError("Cannot upgrade from a newer version")
 
                 # Associate upgrader with the appropriate old version
-                upgraders[update_version] = key
+                upgraders[upgrade_version] = key
 
-                # Turn the update method into a class method
+                # Turn the upgrade method into a class method
                 namespace[key] = classmethod(value)
 
         # Make sure we have enough upgraders
@@ -162,9 +162,8 @@ class SchemaMeta(type):
         # Now we have to add the upgraders; it has to wait until now,
         # because we want the bound method objects, which we can't get
         # until the class has been constructed
-        if upgraders:
-            for version, key in upgraders.items():
-                cls.__vers_upgraders__[version] = getattr(cls, key)
+        for version, key in upgraders.items():
+            cls.__vers_upgraders__[version] = getattr(cls, key)
 
         return cls
 
@@ -188,6 +187,8 @@ def upgrader(version=None):
     argument--a dictionary of attributes--and must return a
     dictionary.  Upgraders may modify the argument in place, if
     desired.
+
+    :param version: The version number the upgrader converts from.
     """
 
     def decorator(func):
