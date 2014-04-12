@@ -45,7 +45,7 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python',
     ],
-    py_modules=['vobj'],
+    packages=['vobj'],
     install_requires=readreq('.requires'),
     tests_require=readreq('.test-requires'),
 )
