@@ -46,6 +46,6 @@ setup(
         'Programming Language :: Python',
     ],
     packages=['vobj'],
-    install_requires=readreq('.requires'),
-    tests_require=readreq('.test-requires'),
+    install_requires=readreq('requirements.txt'),
+    tests_require=readreq('test-requirements.txt'),
 )
