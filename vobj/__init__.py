@@ -18,87 +18,13 @@ from __future__ import division
 import inspect
 
 from vobj.attribute import Attribute
+from vobj.decorators import upgrader, downgrader
 from vobj.schema import Schema
 
 from vobj.attribute import unset as _unset
 
 
-__all__ = ['Attribute', 'upgrader', 'Schema', 'VObject']
-
-
-def upgrader(version=None):
-    """
-    A decorator for marking a method as an upgrader from an older
-    version of a given object.  Can be used in two different ways:
-
-    ``@upgrader``
-        In this usage, the decorated method updates from the previous
-        schema version to this schema version.
-
-    ``@upgrader(number)``
-        In this usage, the decorated method updates from the
-        designated schema version to this schema version.
-
-    Note that upgrader methods are implicitly class methods, as the
-    ``Schema`` object has not been constructed at the time the
-    upgrader method is called.  Also note that upgraders take a single
-    argument--a dictionary of attributes--and must return a
-    dictionary.  Upgraders may modify the argument in place, if
-    desired.
-
-    :param version: The version number the upgrader converts from.
-    """
-
-    def decorator(func):
-        # Save the version to update from
-        func.__vers_upgrader__ = version
-        return func
-
-    # What is version?  It can be None, an int, or a callable,
-    # depending on how @upgrader() was called
-    if version is None:
-        # Called as @upgrader(); return the decorator
-        return decorator
-    elif isinstance(version, (int, long)):
-        # Called as @upgrader(1); sanity-check version and return the
-        # decorator
-        if version < 1:
-            raise TypeError("Invalid upgrader version number %r" % version)
-        return decorator
-    elif callable(version):
-        # Called as @upgrader; use version = None and call the
-        # decorator
-        func = version
-        version = None
-        return decorator(func)
-    else:
-        # Called with an invalid version
-        raise TypeError("Invalid upgrader version number %r" % version)
-
-
-def downgrader(version):
-    """
-    A decorator for marking a method as a downgrader to an older
-    version of a given object.  Note that downgrader methods are
-    implicitly class methods.  Also note that downgraders take a
-    single argument--a dictionary of attributes--and must return a
-    dictionary.  Downgraders may modify the argument in place, if
-    desired.
-
-    :param version: The version number the downgrader returns the
-                    attributes for.  Must be provided.
-    """
-
-    def decorator(func):
-        # Save the version to downgrade to
-        func.__vers_downgrader__ = version
-        return func
-
-    # Sanity-check the version number
-    if not isinstance(version, (int, long)) or version < 1:
-        raise TypeError("Invalid downgrader version number %r" % version)
-
-    return decorator
+__all__ = ['Attribute', 'upgrader', 'downgrader', 'Schema', 'VObject']
 
 
 class _EmptyClass(object):

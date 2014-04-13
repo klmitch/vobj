@@ -22,50 +22,6 @@ import mock
 import vobj
 
 
-class TestUpgrader(unittest.TestCase):
-    def test_no_arg(self):
-        @vobj.upgrader
-        def test():
-            pass
-
-        self.assertEqual(test.__vers_upgrader__, None)
-
-    def test_empty_arg(self):
-        @vobj.upgrader()
-        def test():
-            pass
-
-        self.assertEqual(test.__vers_upgrader__, None)
-
-    def test_int_arg(self):
-        @vobj.upgrader(5)
-        def test():
-            pass
-
-        self.assertEqual(test.__vers_upgrader__, 5)
-
-    def test_int_arg_low(self):
-        self.assertRaises(TypeError, vobj.upgrader, 0)
-
-    def test_other_arg(self):
-        self.assertRaises(TypeError, vobj.upgrader, 'other')
-
-
-class TestDowngrader(unittest.TestCase):
-    def test_int_arg(self):
-        @vobj.downgrader(5)
-        def test():
-            pass
-
-        self.assertEqual(test.__vers_downgrader__, 5)
-
-    def test_int_arg_low(self):
-        self.assertRaises(TypeError, vobj.downgrader, 0)
-
-    def test_other_arg(self):
-        self.assertRaises(TypeError, vobj.downgrader, 'other')
-
-
 class EmptyClass(object):
     # Used to test __setstate__() on abstract Schemas
     pass
