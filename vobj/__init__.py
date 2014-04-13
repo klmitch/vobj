@@ -20,7 +20,8 @@ from vobj.decorators import upgrader, downgrader
 from vobj.schema import Schema
 
 from vobj import converters
-from vobj.version import SmartVersion
+from vobj import proxy
+from vobj import version
 
 
 __all__ = ['Attribute', 'upgrader', 'downgrader', 'Schema', 'VObject']
@@ -95,12 +96,13 @@ class VObjectMeta(type):
         # Now make our additions to the namespace
         namespace['__vers_schemas__'] = schemas
         namespace['__vers_downgraders__'] = downgraders
-        namespace['__version__'] = SmartVersion(len(schemas), last_schema)
+        namespace['__version__'] = version.SmartVersion(len(schemas),
+                                                        last_schema)
 
         return super(VObjectMeta, mcs).__new__(mcs, name, bases, namespace)
 
 
-class VObject(object):
+class VObject(proxy.SchemaProxy):
     """
     Describe a versioned object.  A ``VObject`` subclass describes all
     recognized versions of the object, through ``Schema`` subclasses
@@ -138,45 +140,14 @@ class VObject(object):
         default was declared, a ``TypeError`` will be raised.
         """
 
+        # Construct the Schema instance and set up __vers_values__
         values = self.__vers_schemas__[-1](kwargs)
+        self.__vers_set_values__(values)
 
-        # Save the values
-        self.__vers_init__(values)
-
-    def __vers_init__(self, values, version=None):
-        """
-        Initialize a ``VObject`` instance.  This contains all the
-        common initialization routines, including those called by such
-        methods as ``__setstate__()``, when ``__init__()`` doesn't get
-        called.
-
-        :param values: An initialized ``Schema`` object.
-        :param version: The version to advertise in ``__version__``.
-                        If not specified, the version of the latest
-                        schema will be used.
-        """
-
-        # Save the values
-        super(VObject, self).__setattr__('__vers_values__', values)
-
-        # Set up the local version
-        if not version:
-            version = int(self.__version__)
-        version = SmartVersion(version, self.__vers_schemas__[-1], self)
-        super(VObject, self).__setattr__('__version__', version)
-
-    def __getattr__(self, name):
-        """
-        Retrieve the value of a declared attribute.
-
-        :param name: The name of the attribute.
-
-        :returns: The value of the declared attribute.
-        """
-
-        # Delegate to the Schema object; this covers not just the data
-        # attributes, but also any methods or descriptors
-        return getattr(self.__vers_values__, name)
+        # Set up the smart version field
+        vers = version.SmartVersion(
+            int(self.__version__), self.__vers_schemas__[-1], self)
+        super(VObject, self).__setattr__('__version__', vers)
 
     def __setattr__(self, name, value):
         """
@@ -191,67 +162,6 @@ class VObject(object):
             setattr(self.__vers_values__, name, value)
         else:
             super(VObject, self).__setattr__(name, value)
-
-    def __delattr__(self, name):
-        """
-        Deletes an attribute.  This cannot be called on a declared
-        attribute; if it is, an ``AttributeError`` will be raised.
-
-        :param name: The name of the attribute.
-        """
-
-        # Don't allow deletes of specially declared attributes
-        if name in self.__vers_values__:
-            raise AttributeError("cannot delete attribute %r of %r object" %
-                                 (name, self.__class__.__name__))
-
-        super(VObject, self).__delattr__(name)
-
-    def __eq__(self, other):
-        """
-        Compare two ``VObject`` objects to determine if they are
-        equal.
-
-        :param other: The other ``VObject`` object to compare to.
-
-        :returns: ``True`` if the objects have the same class and
-                  values, ``False`` otherwise.
-        """
-
-        # Always unequal if other isn't of the same class
-        if self.__class__ is not other.__class__:
-            return False
-
-        return self.__vers_values__ == other.__vers_values__
-
-    def __ne__(self, other):
-        """
-        Compare two ``VObject`` objects to determine if they are not
-        equal.
-
-        :param other: The other ``VObject`` object to compare to.
-
-        :returns: ``False`` if the objects have the same class and
-                  values, ``True`` otherwise.
-        """
-
-        # Always unequal if other isn't of the same class
-        if self.__class__ is not other.__class__:
-            return True
-
-        return self.__vers_values__ != other.__vers_values__
-
-    def __getstate__(self):
-        """
-        Retrieve a dictionary describing the value of the ``VObject``
-        object.  This dictionary will have the values of all declared
-        attributes, along with a ``__version__`` key set to the
-        version of the ``VObject`` object.
-
-        :returns: A dictionary of attribute values.
-        """
-
-        return self.__vers_values__.__getstate__()
 
     def __setstate__(self, state):
         """
@@ -306,11 +216,8 @@ class VObject(object):
         # proper order and get our schema object
         values = upgraders(state.copy())
 
-        # We now have an appropriate state; generate the Schema
-        # object and set our state
-        self.__vers_init__(values)
-
-    to_dict = __getstate__
+        # Set the values
+        self.__vers_set_values__(values)
 
     @classmethod
     def from_dict(cls, values):

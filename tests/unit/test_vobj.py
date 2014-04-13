@@ -20,6 +20,7 @@ import unittest
 import mock
 
 import vobj
+from vobj import version
 
 
 class EmptyClass(object):
@@ -110,7 +111,7 @@ class TestVObjectMeta(unittest.TestCase):
 
         self.assertEqual(result.__vers_schemas__, [TestSchema1, TestSchema2])
         self.assertEqual(result.__vers_downgraders__, {})
-        self.assertTrue(isinstance(result.__version__, vobj.SmartVersion))
+        self.assertTrue(isinstance(result.__version__, version.SmartVersion))
         self.assertEqual(result.__version__, 2)
         self.assertFalse(mock_Converters.called)
 
@@ -159,7 +160,7 @@ class TestVObjectMeta(unittest.TestCase):
             1: (TestSchema1, TestSchema3.downgrader_1),
             2: (TestSchema2, TestSchema3.downgrader_2),
         })
-        self.assertTrue(isinstance(result.__version__, vobj.SmartVersion))
+        self.assertTrue(isinstance(result.__version__, version.SmartVersion))
         self.assertEqual(result.__version__, 3)
         mock_Converters.assert_has_calls([
             mock.call(TestSchema1, TestSchema3.downgrader_1),
@@ -171,65 +172,26 @@ class TestVObject(unittest.TestCase):
     def test_abstract_constructor(self):
         self.assertRaises(TypeError, vobj.VObject)
 
-    @mock.patch.object(vobj.VObject, '__vers_init__')
-    def test_init(self, mock_vers_init):
+    @mock.patch.object(version, 'SmartVersion')
+    @mock.patch.object(vobj.VObject, '__vers_set_values__')
+    def test_init(self, mock_set_values, mock_SmartVersion):
         class TestVObject(vobj.VObject):
             pass
         TestVObject.__vers_schemas__ = [
-            mock.Mock(return_value={'__version__': 1}),
-            mock.Mock(return_value={'__version__': 2}),
+            mock.Mock(return_value=mock.Mock()),
+            mock.Mock(return_value=mock.Mock()),
         ]
+        TestVObject.__version__ = '2'
+        schema = TestVObject.__vers_schemas__[1]
+        values = schema.return_value
+        mock_SmartVersion.reset_mock()
 
         result = TestVObject(a=1, b=2, c=3)
 
-        mock_vers_init.assert_called_once_with({'__version__': 2})
-        self.assertFalse(TestVObject.__vers_schemas__[0].called)
-        TestVObject.__vers_schemas__[1].assert_called_once_with(
-            dict(a=1, b=2, c=3))
-
-    @mock.patch.object(vobj, 'SmartVersion', return_value='smart version')
-    def test_vers_init_noversion(self, mock_SmartVersion):
-        vobject = EmptyClass()
-        vobject.__class__ = vobj.VObject
-        super(vobj.VObject, vobject).__setattr__('__version__', 2)
-        super(vobj.VObject, vobject).__setattr__('__vers_schemas__', [
-            mock.Mock(return_value={'__version__': 1}),
-            mock.Mock(return_value={'__version__': 2}),
-        ])
-
-        vobject.__vers_init__('values')
-
-        self.assertEqual(vobject.__vers_values__, 'values')
-        self.assertEqual(vobject.__version__, 'smart version')
+        schema.assert_called_once_with({'a': 1, 'b': 2, 'c': 3})
+        mock_set_values.assert_called_once_with(values)
         mock_SmartVersion.assert_called_once_with(
-            2, vobject.__vers_schemas__[-1], vobject)
-
-    @mock.patch.object(vobj, 'SmartVersion', return_value='smart version')
-    def test_vers_init_withversion(self, mock_SmartVersion):
-        vobject = EmptyClass()
-        vobject.__class__ = vobj.VObject
-        super(vobj.VObject, vobject).__setattr__('__version__', 2)
-        super(vobj.VObject, vobject).__setattr__('__vers_schemas__', [
-            mock.Mock(return_value={'__version__': 1}),
-            mock.Mock(return_value={'__version__': 2}),
-        ])
-
-        vobject.__vers_init__('values', version=5)
-
-        self.assertEqual(vobject.__vers_values__, 'values')
-        self.assertEqual(vobject.__version__, 'smart version')
-        mock_SmartVersion.assert_called_once_with(
-            5, vobject.__vers_schemas__[-1], vobject)
-
-    def test_getattr(self):
-        class TestVObject(vobj.VObject):
-            pass
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(return_value=mock.Mock(attr='value')),
-        ]
-        vobject = TestVObject()
-
-        self.assertEqual(vobject.attr, 'value')
+            2, schema, result)
 
     def test_setattr_delegated(self):
         class TestVObject(vobj.VObject):
@@ -262,146 +224,6 @@ class TestVObject(unittest.TestCase):
         sch.__contains__.assert_called_once_with('attr')
         self.assertEqual(sch.attr, 'schema')
         self.assertEqual(vobject.__dict__['attr'], 'value')
-
-    def test_delattr_delegated(self):
-        class TestVObject(vobj.VObject):
-            pass
-        sch = mock.MagicMock()
-        sch.__contains__.return_value = True
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(return_value=sch),
-        ]
-        vobject = TestVObject()
-
-        def test_func():
-            del vobject.attr
-
-        self.assertRaises(AttributeError, test_func)
-        sch.__contains__.assert_called_once_with('attr')
-
-    def test_delattr_undelegated(self):
-        class TestVObject(vobj.VObject):
-            pass
-        sch = mock.MagicMock(attr='schema')
-        sch.__contains__.return_value = False
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(return_value=sch),
-        ]
-        vobject = TestVObject()
-        super(vobj.VObject, vobject).__setattr__('attr', 'value')
-
-        del vobject.attr
-
-        sch.__contains__.assert_called_once_with('attr')
-        self.assertEqual(sch.attr, 'schema')
-        self.assertFalse('attr' in vobject.__dict__)
-
-    def test_eq_equal(self):
-        class TestVObject(vobj.VObject):
-            pass
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(side_effect=[
-                dict(a=1, b=2, c=3),
-                dict(a=1, b=2, c=3),
-            ]),
-        ]
-        vobj1 = TestVObject()
-        vobj2 = TestVObject()
-
-        self.assertTrue(vobj1 == vobj2)
-
-    def test_eq_unequal_class(self):
-        class TestVObject1(vobj.VObject):
-            pass
-        TestVObject1.__vers_schemas__ = [
-            mock.Mock(return_value=dict(a=1, b=2, c=3)),
-        ]
-
-        class TestVObject2(vobj.VObject):
-            pass
-        TestVObject2.__vers_schemas__ = [
-            mock.Mock(return_value=dict(a=1, b=2, c=3)),
-        ]
-
-        vobj1 = TestVObject1()
-        vobj2 = TestVObject2()
-
-        self.assertFalse(vobj1 == vobj2)
-
-    def test_eq_unequal_value(self):
-        class TestVObject(vobj.VObject):
-            pass
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(side_effect=[
-                dict(a=1, b=2, c=3),
-                dict(a=3, b=2, c=1),
-            ]),
-        ]
-        vobj1 = TestVObject()
-        vobj2 = TestVObject()
-
-        self.assertFalse(vobj1 == vobj2)
-
-    def test_ne_equal(self):
-        class TestVObject(vobj.VObject):
-            pass
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(side_effect=[
-                dict(a=1, b=2, c=3),
-                dict(a=1, b=2, c=3),
-            ]),
-        ]
-        vobj1 = TestVObject()
-        vobj2 = TestVObject()
-
-        self.assertFalse(vobj1 != vobj2)
-
-    def test_ne_unequal_class(self):
-        class TestVObject1(vobj.VObject):
-            pass
-        TestVObject1.__vers_schemas__ = [
-            mock.Mock(return_value=dict(a=1, b=2, c=3)),
-        ]
-
-        class TestVObject2(vobj.VObject):
-            pass
-        TestVObject2.__vers_schemas__ = [
-            mock.Mock(return_value=dict(a=1, b=2, c=3)),
-        ]
-
-        vobj1 = TestVObject1()
-        vobj2 = TestVObject2()
-
-        self.assertTrue(vobj1 != vobj2)
-
-    def test_ne_unequal_value(self):
-        class TestVObject(vobj.VObject):
-            pass
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(side_effect=[
-                dict(a=1, b=2, c=3),
-                dict(a=3, b=2, c=1),
-            ]),
-        ]
-        vobj1 = TestVObject()
-        vobj2 = TestVObject()
-
-        self.assertTrue(vobj1 != vobj2)
-
-    def test_getstate(self):
-        class TestVObject(vobj.VObject):
-            pass
-        state = {'__version__': 2}
-        sch = mock.Mock(__getstate__=mock.Mock(return_value=state))
-        TestVObject.__vers_schemas__ = [
-            mock.Mock(return_value=sch),
-        ]
-        vobject = TestVObject()
-
-        result = vobject.__getstate__()
-
-        self.assertEqual(result, {'__version__': 2})
-        sch.__getstate__.assert_called_once_with()
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_abstract(self, mock_Converters):
