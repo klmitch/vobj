@@ -22,25 +22,6 @@ import mock
 import vobj
 
 
-class TestAttribute(unittest.TestCase):
-    def test_init_defaults(self):
-        attr = vobj.Attribute()
-
-        self.assertEqual(attr.default, vobj._unset)
-        self.assertTrue(callable(attr.validate))
-        self.assertEqual(attr.validate('spam'), 'spam')
-        self.assertTrue(callable(attr.getstate))
-        self.assertEqual(attr.getstate('spam'), 'spam')
-
-    def test_init(self):
-        attr = vobj.Attribute('default', validate='validate',
-                              getstate='getstate')
-
-        self.assertEqual(attr.default, 'default')
-        self.assertEqual(attr.validate, 'validate')
-        self.assertEqual(attr.getstate, 'getstate')
-
-
 class TestSchemaMeta(unittest.TestCase):
     def test_bad_version_declared(self):
         namespace = {
