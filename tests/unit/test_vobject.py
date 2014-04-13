@@ -168,9 +168,11 @@ class VObjectTest(unittest.TestCase):
     def test_abstract_constructor(self):
         self.assertRaises(TypeError, vobject.VObject)
 
+    @mock.patch.object(vobject.VObject, '__vers_cache_invalidate__')
     @mock.patch.object(version, 'SmartVersion')
     @mock.patch.object(vobject.VObject, '__vers_set_values__')
-    def test_init(self, mock_set_values, mock_SmartVersion):
+    def test_init(self, mock_set_values, mock_SmartVersion,
+                  mock_cache_invalidate):
         class TestVObject(vobject.VObject):
             pass
         TestVObject.__vers_schemas__ = [
@@ -185,9 +187,13 @@ class VObjectTest(unittest.TestCase):
         result = TestVObject(a=1, b=2, c=3)
 
         schema.assert_called_once_with({'a': 1, 'b': 2, 'c': 3})
+        self.assertEqual(values.__vers_notify__,
+                         result.__vers_cache_invalidate__)
         mock_set_values.assert_called_once_with(values)
         mock_SmartVersion.assert_called_once_with(
             2, schema, result)
+        mock_cache_invalidate.assert_called_once_with()
+        self.assertEqual(result.__vers_proxies__, {})
 
     def test_setattr_delegated(self):
         class TestVObject(vobject.VObject):
@@ -220,6 +226,101 @@ class VObjectTest(unittest.TestCase):
         sch.__contains__.assert_called_once_with('attr')
         self.assertEqual(sch.attr, 'schema')
         self.assertEqual(obj.__dict__['attr'], 'value')
+
+    @mock.patch.object(proxy, 'ReadOnlyLazySchemaProxy', return_value='proxy')
+    def test_accessor_cached(self, mock_ReadOnlyLazySchemaProxy):
+        class TestVObject(vobject.VObject):
+            pass
+        TestVObject.__vers_schemas__ = [
+            mock.Mock(return_value=mock.Mock()),
+        ]
+        obj = TestVObject()
+        obj.__vers_proxies__[1] = 'cached'
+
+        with mock.patch.object(version, 'SmartVersion',
+                               return_value='version') as mock_SmartVersion:
+            result = obj.__vers_accessor__(1)
+
+        self.assertEqual(result, 'cached')
+        self.assertFalse(mock_SmartVersion.called)
+        self.assertFalse(mock_ReadOnlyLazySchemaProxy.called)
+        self.assertEqual(obj.__vers_proxies__, {
+            1: 'cached',
+        })
+
+    @mock.patch.object(proxy, 'ReadOnlyLazySchemaProxy', return_value='proxy')
+    def test_accessor_uncached(self, mock_ReadOnlyLazySchemaProxy):
+        class TestVObject(vobject.VObject):
+            pass
+        TestVObject.__vers_schemas__ = [
+            mock.Mock(return_value=mock.Mock()),
+        ]
+        obj = TestVObject()
+
+        with mock.patch.object(version, 'SmartVersion',
+                               return_value='version') as mock_SmartVersion:
+            result = obj.__vers_accessor__(1)
+
+        self.assertEqual(result, 'proxy')
+        mock_SmartVersion.assert_called_once_with(
+            1, TestVObject.__vers_schemas__[0], obj)
+        mock_ReadOnlyLazySchemaProxy.assert_called_once_with('version')
+        self.assertEqual(obj.__vers_proxies__, {
+            1: 'proxy',
+        })
+
+    @mock.patch.object(vobject.VObject, '__getstate__', return_value='state')
+    def test_cache_get_cached(self, mock_getstate):
+        class TestVObject(vobject.VObject):
+            pass
+        TestVObject.__vers_schemas__ = [
+            mock.Mock(return_value=mock.Mock()),
+        ]
+        TestVObject.__vers_downgraders__[1] = mock.Mock(return_value='values')
+        obj = TestVObject()
+        obj.__vers_cache__[1] = 'cached'
+
+        result = obj.__vers_cache_get__(1)
+
+        self.assertEqual(result, 'cached')
+        self.assertFalse(TestVObject.__vers_downgraders__[1].called)
+        self.assertEqual(obj.__vers_cache__, {
+            1: 'cached',
+        })
+
+    @mock.patch.object(vobject.VObject, '__getstate__', return_value='state')
+    def test_cache_get_uncached(self, mock_getstate):
+        class TestVObject(vobject.VObject):
+            pass
+        TestVObject.__vers_schemas__ = [
+            mock.Mock(return_value=mock.Mock()),
+        ]
+        TestVObject.__vers_downgraders__[1] = mock.Mock(return_value='values')
+        obj = TestVObject()
+
+        result = obj.__vers_cache_get__(1)
+
+        self.assertEqual(result, 'values')
+        TestVObject.__vers_downgraders__[1].assert_called_once_with('state')
+        self.assertEqual(obj.__vers_cache__, {
+            1: 'values',
+        })
+
+    def test_cache_invalidate(self):
+        class TestVObject(vobject.VObject):
+            pass
+        TestVObject.__vers_schemas__ = [
+            mock.Mock(return_value=mock.Mock()),
+        ]
+        obj = TestVObject()
+        obj.__vers_cache__.update({
+            1: 'one',
+            2: 'two',
+        })
+
+        obj.__vers_cache_invalidate__()
+
+        self.assertEqual(obj.__vers_cache__, {})
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_abstract(self, mock_Converters):
@@ -326,6 +427,7 @@ class VObjectTest(unittest.TestCase):
             '__version__': 2,
             'attr': 'value',
         })
+        self.assertEqual(values.__vers_notify__, obj.__vers_cache_invalidate__)
         self.assertEqual(obj.__vers_values__, values)
 
     @mock.patch('vobj.converters.Converters')
@@ -374,6 +476,7 @@ class VObjectTest(unittest.TestCase):
             '__version__': 2,
             'attr': 'value',
         })
+        self.assertEqual(values.__vers_notify__, obj.__vers_cache_invalidate__)
         self.assertEqual(obj.__vers_values__, values)
 
     @mock.patch('vobj.converters.Converters')

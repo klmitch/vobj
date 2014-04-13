@@ -116,8 +116,9 @@ class VObject(proxy.SchemaProxy):
     def __new__(cls, **kwargs):
         """
         Construct a new instance of the ``VObject`` subclass.
-        Verifies that the ``VObject`` subclass is not abstract (has no
-        schemas).  Raises a ``TypeError`` if it is.
+        Verifies that the ``VObject`` subclass is not abstract (has at
+        least one schema defined).  Raises a ``TypeError`` if it is
+        abstract.
 
         :returns: A newly constructed instance of the ``VObject``
                   subclass.
@@ -140,12 +141,17 @@ class VObject(proxy.SchemaProxy):
 
         # Construct the Schema instance and set up __vers_values__
         values = self.__vers_schemas__[-1](kwargs)
+        values.__vers_notify__ = self.__vers_cache_invalidate__
         self.__vers_set_values__(values)
 
         # Set up the smart version field
         vers = version.SmartVersion(
             int(self.__version__), self.__vers_schemas__[-1], self)
         super(VObject, self).__setattr__('__version__', vers)
+
+        # Also need to set up the downgrade cache
+        self.__vers_cache_invalidate__()
+        super(VObject, self).__setattr__('__vers_proxies__', {})
 
     def __setattr__(self, name, value):
         """
@@ -160,6 +166,51 @@ class VObject(proxy.SchemaProxy):
             setattr(self.__vers_values__, name, value)
         else:
             super(VObject, self).__setattr__(name, value)
+
+    def __vers_accessor__(self, vers):
+        """
+        Retrieve a proxy for the given version.
+
+        :param vers: The integer version to generate a proxy for.
+
+        :returns: A read-only, lazy translating proxy for the given
+                  version.
+        """
+
+        # Do we need to generate it?
+        if vers not in self.__vers_proxies__:
+            smart_version = version.SmartVersion(
+                vers, self.__vers_schemas__[vers - 1], self)
+            self.__vers_proxies__[vers] = proxy.ReadOnlyLazySchemaProxy(
+                smart_version)
+
+        return self.__vers_proxies__[vers]
+
+    def __vers_cache_get__(self, vers):
+        """
+        Retrieve the schema object for the given version.
+
+        :param vers: The integer version to generate the schema
+                        object for.
+
+        :returns: A schema object for the given version.
+        """
+
+        # Do we need to generate it?
+        if vers not in self.__vers_cache__:
+            sch_obj = self.__vers_downgraders__[vers](self.__getstate__())
+            self.__vers_cache__[vers] = sch_obj
+
+        return self.__vers_cache__[vers]
+
+    def __vers_cache_invalidate__(self):
+        """
+        Invalidate the version cache.
+        """
+
+        # Just clear the cache; the proxy will invoke a regeneration
+        # if need be
+        super(VObject, self).__setattr__('__vers_cache__', {})
 
     def __setstate__(self, state):
         """
@@ -213,6 +264,7 @@ class VObject(proxy.SchemaProxy):
         # OK, we now have a pipeline of upgraders; call them in the
         # proper order and get our schema object
         values = upgraders(state.copy())
+        values.__vers_notify__ = self.__vers_cache_invalidate__
 
         # Set the values
         self.__vers_set_values__(values)
