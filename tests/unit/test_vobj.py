@@ -15,14 +15,14 @@
 
 import copy
 import operator
+import unittest
 
 import mock
-import unittest2
 
 import vobj
 
 
-class TestAttribute(unittest2.TestCase):
+class TestAttribute(unittest.TestCase):
     def test_init_defaults(self):
         attr = vobj.Attribute()
 
@@ -41,7 +41,7 @@ class TestAttribute(unittest2.TestCase):
         self.assertEqual(attr.getstate, 'getstate')
 
 
-class TestSchemaMeta(unittest2.TestCase):
+class TestSchemaMeta(unittest.TestCase):
     def test_bad_version_declared(self):
         namespace = {
             '__version__': '23',
@@ -146,8 +146,8 @@ class TestSchemaMeta(unittest2.TestCase):
 
         self.assertEqual(result.__vers_properties__, set('acd'))
         self.assertEqual(result.b, None)
-        self.assertIsInstance(result.c, property)
-        self.assertIsInstance(result.d, property)
+        self.assertTrue(isinstance(result.c, property))
+        self.assertTrue(isinstance(result.d, property))
 
     def test_upgrader_abstract(self):
         namespace = {
@@ -188,8 +188,10 @@ class TestSchemaMeta(unittest2.TestCase):
 
         result = vobj.SchemaMeta('TestSchema', (object,), namespace)
 
-        self.assertIsInstance(result.__dict__['fake_upgrader1'], classmethod)
-        self.assertIsInstance(result.__dict__['fake_upgrader2'], classmethod)
+        self.assertTrue(isinstance(result.__dict__['fake_upgrader1'],
+                                   classmethod))
+        self.assertTrue(isinstance(result.__dict__['fake_upgrader2'],
+                                   classmethod))
         self.assertEqual(result.__vers_upgraders__, {
             1: result.fake_upgrader1,
             2: result.fake_upgrader2,
@@ -255,8 +257,10 @@ class TestSchemaMeta(unittest2.TestCase):
 
         result = vobj.SchemaMeta('TestSchema', (object,), namespace)
 
-        self.assertIsInstance(result.__dict__['fake_downgrader1'], classmethod)
-        self.assertIsInstance(result.__dict__['fake_downgrader2'], classmethod)
+        self.assertTrue(isinstance(result.__dict__['fake_downgrader1'],
+                                   classmethod))
+        self.assertTrue(isinstance(result.__dict__['fake_downgrader2'],
+                                   classmethod))
         self.assertEqual(result.__vers_downgraders__, {
             1: result.fake_downgrader1,
             2: result.fake_downgrader2,
@@ -271,7 +275,7 @@ class TestSchemaMeta(unittest2.TestCase):
         self.assertEqual(result.__vers_values__, None)
 
 
-class TestUpgrader(unittest2.TestCase):
+class TestUpgrader(unittest.TestCase):
     def test_no_arg(self):
         @vobj.upgrader
         def test():
@@ -300,7 +304,7 @@ class TestUpgrader(unittest2.TestCase):
         self.assertRaises(TypeError, vobj.upgrader, 'other')
 
 
-class TestDowngrader(unittest2.TestCase):
+class TestDowngrader(unittest.TestCase):
     def test_int_arg(self):
         @vobj.downgrader(5)
         def test():
@@ -320,7 +324,7 @@ class EmptyClass(object):
     pass
 
 
-class TestSchema(unittest2.TestCase):
+class TestSchema(unittest.TestCase):
     def test_abstract_constructor(self):
         self.assertRaises(TypeError, vobj.Schema)
 
@@ -397,8 +401,7 @@ class TestSchema(unittest2.TestCase):
             attr = vobj.Attribute('default')
         sch = TestSchema()
 
-        with self.assertRaises(RuntimeError):
-            result = sch.attr
+        self.assertRaises(RuntimeError, lambda: sch.attr)
 
     def test_getattr(self):
         class TestSchema(vobj.Schema):
@@ -415,8 +418,7 @@ class TestSchema(unittest2.TestCase):
             __version__ = 1
         sch = TestSchema({})
 
-        with self.assertRaises(AttributeError):
-            result = sch.attr
+        self.assertRaises(AttributeError, lambda: sch.attr)
 
     def test_setattr_uninit(self):
         class TestSchema(vobj.Schema):
@@ -424,8 +426,10 @@ class TestSchema(unittest2.TestCase):
             attr = vobj.Attribute('default')
         sch = TestSchema()
 
-        with self.assertRaises(RuntimeError):
+        def test_func():
             sch.attr = 'value'
+
+        self.assertRaises(RuntimeError, test_func)
 
     def test_setattr(self):
         validator = mock.Mock(return_value='validated')
@@ -472,8 +476,10 @@ class TestSchema(unittest2.TestCase):
             attr = vobj.Attribute('default')
         sch = TestSchema()
 
-        with self.assertRaises(RuntimeError):
+        def test_func():
             del sch.attr
+
+        self.assertRaises(RuntimeError, test_func)
 
     def test_delattr(self):
         class TestSchema(vobj.Schema):
@@ -481,9 +487,10 @@ class TestSchema(unittest2.TestCase):
             attr = vobj.Attribute('default')
         sch = TestSchema({})
 
-        with self.assertRaises(AttributeError):
+        def test_func():
             del sch.attr
 
+        self.assertRaises(AttributeError, test_func)
         self.assertEqual(sch.__vers_values__, dict(attr='default'))
 
     def test_delattr_nosuch(self):
@@ -506,8 +513,7 @@ class TestSchema(unittest2.TestCase):
         sch1 = TestSchema()
         sch2 = TestSchema()
 
-        with self.assertRaises(RuntimeError):
-            result = (sch1 == sch2)
+        self.assertRaises(RuntimeError, lambda: (sch1 == sch2))
 
     def test_eq_equal(self):
         class TestSchema(vobj.Schema):
@@ -556,8 +562,7 @@ class TestSchema(unittest2.TestCase):
         sch1 = TestSchema()
         sch2 = TestSchema()
 
-        with self.assertRaises(RuntimeError):
-            result = (sch1 != sch2)
+        self.assertRaises(RuntimeError, lambda: (sch1 != sch2))
 
     def test_ne_equal(self):
         class TestSchema(vobj.Schema):
@@ -604,8 +609,7 @@ class TestSchema(unittest2.TestCase):
             attr2 = vobj.Attribute()
         sch = TestSchema()
 
-        with self.assertRaises(RuntimeError):
-            state = sch.__getstate__()
+        self.assertRaises(RuntimeError, sch.__getstate__)
 
     def test_getstate(self):
         class TestSchema(vobj.Schema):
@@ -669,7 +673,7 @@ class TestSchema(unittest2.TestCase):
         validator.assert_called_once_with('value')
 
 
-class TestSmartVersion(unittest2.TestCase):
+class TestSmartVersion(unittest.TestCase):
     def test_init_basic(self):
         sv = vobj.SmartVersion(5, 'schema')
 
@@ -851,15 +855,13 @@ class TestSmartVersion(unittest2.TestCase):
         schema = mock.Mock(__vers_downgraders__={3: True}, __version__=4)
         sv = vobj.SmartVersion(1, schema)
 
-        with self.assertRaises(RuntimeError):
-            result = sv[4]
+        self.assertRaises(RuntimeError, lambda: sv[4])
 
     def test_getitem_no_schema(self):
         master = mock.Mock(__vers_cache__={})
         sv = vobj.SmartVersion(1, None, master)
 
-        with self.assertRaises(KeyError):
-            result = sv[4]
+        self.assertRaises(KeyError, lambda: sv[4])
 
     def test_getitem_return_master(self):
         schema = mock.Mock(__vers_downgraders__={3: True}, __version__=4)
@@ -875,8 +877,7 @@ class TestSmartVersion(unittest2.TestCase):
         master = mock.Mock(__vers_cache__={})
         sv = vobj.SmartVersion(1, schema, master)
 
-        with self.assertRaises(KeyError):
-            result = sv[2]
+        self.assertRaises(KeyError, lambda: sv[2])
 
     def test_getitem_cached(self):
         schema = mock.Mock(__vers_downgraders__={3: True}, __version__=4)
@@ -903,7 +904,7 @@ class TestSmartVersion(unittest2.TestCase):
         self.assertEqual(result, set([3, 4]))
 
 
-class TestDowngraderClass(unittest2.TestCase):
+class TestDowngraderClass(unittest.TestCase):
     def test_init(self):
         dg = vobj.Downgrader('downgrader', 'schema')
 
@@ -926,7 +927,7 @@ class TestDowngraderClass(unittest2.TestCase):
             dict(__version__=3, a=3, b=2, c=1))
 
 
-class TestVObjectMeta(unittest2.TestCase):
+class TestVObjectMeta(unittest.TestCase):
     def test_empty(self):
         namespace = {
             '__module__': 'test_vobject',
@@ -1009,7 +1010,7 @@ class TestVObjectMeta(unittest2.TestCase):
 
         self.assertEqual(result.__vers_schemas__, [TestSchema1, TestSchema2])
         self.assertEqual(result.__vers_downgraders__, {})
-        self.assertIsInstance(result.__version__, vobj.SmartVersion)
+        self.assertTrue(isinstance(result.__version__, vobj.SmartVersion))
         self.assertEqual(result.__version__, 2)
         self.assertFalse(mock_Downgrader.called)
 
@@ -1058,7 +1059,7 @@ class TestVObjectMeta(unittest2.TestCase):
             1: (TestSchema3.downgrader_1, TestSchema1),
             2: (TestSchema3.downgrader_2, TestSchema2),
         })
-        self.assertIsInstance(result.__version__, vobj.SmartVersion)
+        self.assertTrue(isinstance(result.__version__, vobj.SmartVersion))
         self.assertEqual(result.__version__, 3)
         mock_Downgrader.assert_has_calls([
             mock.call(TestSchema3.downgrader_1, TestSchema1),
@@ -1066,7 +1067,7 @@ class TestVObjectMeta(unittest2.TestCase):
         ])
 
 
-class TestCallUpgrader(unittest2.TestCase):
+class TestCallUpgrader(unittest.TestCase):
     def test_call(self):
         state = dict(__version__=2, a=1, b=2, c=3)
         upgrader = mock.Mock(im_self=mock.Mock(__version__=3),
@@ -1086,7 +1087,7 @@ def fake_call_upgrader(upgrader, state):
     return state
 
 
-class TestVObject(unittest2.TestCase):
+class TestVObject(unittest.TestCase):
     def test_abstract_constructor(self):
         self.assertRaises(TypeError, vobj.VObject)
 
@@ -1192,9 +1193,10 @@ class TestVObject(unittest2.TestCase):
         ]
         vobject = TestVObject()
 
-        with self.assertRaises(AttributeError):
+        def test_func():
             del vobject.attr
 
+        self.assertRaises(AttributeError, test_func)
         sch.__contains__.assert_called_once_with('attr')
 
     def test_delattr_undelegated(self):
@@ -1534,5 +1536,5 @@ class TestVObject(unittest2.TestCase):
 
         result = TestVObject.from_dict('values')
 
-        self.assertIsInstance(result, TestVObject)
+        self.assertTrue(isinstance(result, TestVObject))
         mock_setstate.assert_called_once_with('values')
