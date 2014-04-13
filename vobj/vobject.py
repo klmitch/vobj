@@ -83,18 +83,23 @@ class VObjectMeta(type):
         schemas = [v for k, v in sorted(versions.items(), key=lambda x: x[0])]
         last_schema = schemas[-1] if schemas else None
 
-        # Set up downgraders
+        # Set up downgraders and upgraders
         if last_schema:
             downgraders = dict(
                 (vers, converters.Converters(versions[vers], down))
                 for vers, down in last_schema.__vers_downgraders__.items()
             )
+            upgraders = {
+                len(schemas): converters.Converters(schemas[-1]),
+            }
         else:
             downgraders = {}
+            upgraders = {}
 
         # Now make our additions to the namespace
         namespace['__vers_schemas__'] = schemas
         namespace['__vers_downgraders__'] = downgraders
+        namespace['__vers_upgraders__'] = upgraders
         namespace['__version__'] = version.SmartVersion(len(schemas),
                                                         last_schema)
 
@@ -112,6 +117,56 @@ class VObject(proxy.SchemaProxy):
     safely.  Versioned objects can also be converted to and from raw
     dictionaries using the ``to_dict()`` and ``from_dict()`` methods.
     """
+
+    @classmethod
+    def __vers_upgrader_get__(cls, vers):
+        """
+        Look up the ``vobj.converters.Converters`` instance needed to
+        convert states from the given version to the latest version
+        for this ``VObject``.
+
+        :param vers: The version of the state for which a converter is
+                     needed.
+
+        :returns: An instance of ``vobj.converters.Converters``.
+        """
+
+        # Do we need to generate the converter?
+        if vers not in cls.__vers_upgraders__:
+            # Initialize loop variables
+            sch = cls.__vers_schemas__[-1]
+            sch_vers = sch.__version__
+
+            # Initialize a landing pad
+            cvt = converters.Converters(sch)
+
+            # Use a greedy algorithm to compute the chain of schema
+            # upgraders
+            while vers != sch_vers:
+                # Find the upgrader that most closely matches the
+                # target version
+                for trial_vers in range(vers, sch_vers):
+                    if trial_vers in sch.__vers_upgraders__:
+                        # Add the upgrader to the converter
+                        cvt.append(sch.__vers_upgraders__[trial_vers])
+
+                        # Select the appropriate ancestor schema and
+                        # update sch_vers
+                        sch = cls.__vers_schemas__[trial_vers - 1]
+                        sch_vers = trial_vers
+
+                        # We're done with the for loop, but not the
+                        # while
+                        break
+                else:
+                    # Shouldn't happen
+                    raise TypeError("missing upgrader for schema version %s" %
+                                    sch.__version__)
+
+            # OK, save the converter set into the cache
+            cls.__vers_upgraders__[vers] = cvt
+
+        return cls.__vers_upgraders__[vers]
 
     def __new__(cls, **kwargs):
         """
@@ -228,38 +283,19 @@ class VObject(proxy.SchemaProxy):
             raise TypeError("cannot instantiate abstract versioned object "
                             "class '%s'" % self.__class__.__name__)
 
-        target = sch = self.__vers_schemas__[-1]
-        schema_vers = sch.__version__
-
         # First step, get the state version
         if '__version__' not in state:
             raise TypeError("schema version not available in state")
         vers = state['__version__']
+
+        # Next, sanity-check the version
+        max_vers = self.__vers_schemas__[-1].__version__
         if (not isinstance(vers, six.integer_types) or
-                vers < 1 or vers > schema_vers):
+                vers < 1 or vers > max_vers):
             raise TypeError("invalid schema version %r in state" % vers)
 
-        # Now, start with the desired schema and build up a pipeline
-        # of upgraders
-        upgraders = converters.Converters(target)
-        while vers != schema_vers:
-            # Find the upgrader that most closely matches the target
-            # version
-            for trial_vers in range(vers, schema_vers):
-                if trial_vers in sch.__vers_upgraders__:
-                    # Add the upgrader we want
-                    upgraders.append(sch.__vers_upgraders__[trial_vers])
-
-                    # Now select the appropriate ancestor schema and
-                    # update schema_vers
-                    sch = self.__vers_schemas__[trial_vers - 1]
-                    schema_vers = trial_vers
-
-                    # We're done with the for loop, but not the while
-                    break
-            else:
-                raise TypeError("missing upgrader for schema version %s" %
-                                sch.__version__)
+        # Now, get the upgraders
+        upgraders = self.__vers_upgrader_get__(vers)
 
         # OK, we now have a pipeline of upgraders; call them in the
         # proper order and get our schema object
