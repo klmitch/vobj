@@ -27,29 +27,6 @@ class EmptyClass(object):
     pass
 
 
-class TestDowngraderClass(unittest.TestCase):
-    def test_init(self):
-        dg = vobj.Downgrader('downgrader', 'schema')
-
-        self.assertEqual(dg.downgrader, 'downgrader')
-        self.assertEqual(dg.schema, 'schema')
-
-    def test_call(self):
-        downgrader = mock.Mock(return_value=dict(a=3, b=2, c=1))
-        values = mock.Mock(__setstate__=mock.Mock())
-        schema = mock.Mock(__version__=3, return_value=values)
-        dg = vobj.Downgrader(downgrader, schema)
-        state = dict(__version__=5, a=1, b=2, c=3)
-
-        result = dg(state)
-
-        self.assertEqual(result, values)
-        downgrader.assert_called_once_with(dict(a=1, b=2, c=3))
-        schema.assert_called_once_with()
-        values.__setstate__.assert_called_once_with(
-            dict(__version__=3, a=3, b=2, c=1))
-
-
 class TestVObjectMeta(unittest.TestCase):
     def test_empty(self):
         namespace = {
@@ -110,8 +87,8 @@ class TestVObjectMeta(unittest.TestCase):
         self.assertRaises(TypeError, vobj.VObjectMeta, 'TestVObject',
                           (object,), namespace)
 
-    @mock.patch.object(vobj, 'Downgrader', side_effect=lambda x, y: (x, y))
-    def test_normal(self, mock_Downgrader):
+    @mock.patch('vobj.converters.Converters', side_effect=lambda x, y: (x, y))
+    def test_normal(self, mock_Converters):
         class TestSchema1(vobj.Schema):
             __version__ = 1
 
@@ -135,10 +112,10 @@ class TestVObjectMeta(unittest.TestCase):
         self.assertEqual(result.__vers_downgraders__, {})
         self.assertTrue(isinstance(result.__version__, vobj.SmartVersion))
         self.assertEqual(result.__version__, 2)
-        self.assertFalse(mock_Downgrader.called)
+        self.assertFalse(mock_Converters.called)
 
-    @mock.patch.object(vobj, 'Downgrader', side_effect=lambda x, y: (x, y))
-    def test_downgraders(self, mock_Downgrader):
+    @mock.patch('vobj.converters.Converters', side_effect=lambda x, y: (x, y))
+    def test_downgraders(self, mock_Converters):
         class TestSchema1(vobj.Schema):
             __version__ = 1
 
@@ -179,35 +156,15 @@ class TestVObjectMeta(unittest.TestCase):
             TestSchema3,
         ])
         self.assertEqual(result.__vers_downgraders__, {
-            1: (TestSchema3.downgrader_1, TestSchema1),
-            2: (TestSchema3.downgrader_2, TestSchema2),
+            1: (TestSchema1, TestSchema3.downgrader_1),
+            2: (TestSchema2, TestSchema3.downgrader_2),
         })
         self.assertTrue(isinstance(result.__version__, vobj.SmartVersion))
         self.assertEqual(result.__version__, 3)
-        mock_Downgrader.assert_has_calls([
-            mock.call(TestSchema3.downgrader_1, TestSchema1),
-            mock.call(TestSchema3.downgrader_2, TestSchema2),
+        mock_Converters.assert_has_calls([
+            mock.call(TestSchema1, TestSchema3.downgrader_1),
+            mock.call(TestSchema2, TestSchema3.downgrader_2),
         ])
-
-
-class TestCallUpgrader(unittest.TestCase):
-    def test_call(self):
-        state = dict(__version__=2, a=1, b=2, c=3)
-        upgrader = mock.Mock(im_self=mock.Mock(__version__=3),
-                             return_value=dict(a=3, b=2, c=1))
-
-        result = vobj._call_upgrader(upgrader, state)
-
-        self.assertEqual(state, dict(__version__=2, a=1, b=2, c=3))
-        self.assertEqual(result, dict(__version__=3, a=3, b=2, c=1))
-        upgrader.assert_called_once_with(dict(a=1, b=2, c=3))
-
-
-def fake_call_upgrader(upgrader, state):
-    state = copy.deepcopy(state)
-    state.setdefault('upgraders', [])
-    state['upgraders'].append(upgrader)
-    return state
 
 
 class TestVObject(unittest.TestCase):
@@ -446,9 +403,8 @@ class TestVObject(unittest.TestCase):
         self.assertEqual(result, {'__version__': 2})
         sch.__getstate__.assert_called_once_with()
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_abstract(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_abstract(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         vobject = EmptyClass()
@@ -458,11 +414,10 @@ class TestVObject(unittest.TestCase):
             '__version__': 1,
             'attr': 'value',
         })
-        self.assertFalse(mock_call_upgrader.called)
+        self.assertFalse(mock_Converters.called)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_state_unversioned(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_state_unversioned(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -474,12 +429,10 @@ class TestVObject(unittest.TestCase):
         self.assertRaises(TypeError, vobject.__setstate__, {
             'attr': 'value',
         })
-        self.assertFalse(mock_call_upgrader.called)
-        self.assertFalse(sch.__setstate__.called)
+        self.assertFalse(mock_Converters.called)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_state_lowversion(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_state_lowversion(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -492,12 +445,10 @@ class TestVObject(unittest.TestCase):
             '__version__': 0,
             'attr': 'value',
         })
-        self.assertFalse(mock_call_upgrader.called)
-        self.assertFalse(sch.__setstate__.called)
+        self.assertFalse(mock_Converters.called)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_state_highversion(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_state_highversion(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -512,12 +463,10 @@ class TestVObject(unittest.TestCase):
             '__version__': 4,
             'attr': 'value',
         })
-        self.assertFalse(mock_call_upgrader.called)
-        self.assertFalse(sch.__setstate__.called)
+        self.assertFalse(mock_Converters.called)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_state_badversion(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_state_badversion(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -532,12 +481,10 @@ class TestVObject(unittest.TestCase):
             '__version__': "bad",
             'attr': 'value',
         })
-        self.assertFalse(mock_call_upgrader.called)
-        self.assertFalse(sch.__setstate__.called)
+        self.assertFalse(mock_Converters.called)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_exact(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_exact(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -552,16 +499,19 @@ class TestVObject(unittest.TestCase):
             'attr': 'value',
         })
 
-        self.assertFalse(mock_call_upgrader.called)
-        sch.__setstate__.assert_called_once_with({
+        upgraders = mock_Converters.return_value
+        values = upgraders.return_value
+        mock_Converters.assert_called_once_with(
+            TestVObject.__vers_schemas__[1])
+        self.assertFalse(upgraders.append.called)
+        upgraders.assert_called_once_with({
             '__version__': 2,
             'attr': 'value',
         })
-        self.assertEqual(vobject.__vers_values__, sch)
+        self.assertEqual(vobject.__vers_values__, values)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_upgrade(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_upgrade(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -593,27 +543,23 @@ class TestVObject(unittest.TestCase):
             'attr': 'value',
         })
 
-        mock_call_upgrader.assert_has_calls([
-            mock.call('2->4', {
-                '__version__': 2,
-                'attr': 'value',
-            }),
-            mock.call('4->5', {
-                '__version__': 2,
-                'attr': 'value',
-                'upgraders': ['2->4'],
-            }),
+        upgraders = mock_Converters.return_value
+        values = upgraders.return_value
+        mock_Converters.assert_called_once_with(
+            TestVObject.__vers_schemas__[4])
+        upgraders.append.assert_has_calls([
+            mock.call('4->5'),
+            mock.call('2->4'),
         ])
-        sch.__setstate__.assert_called_once_with({
+        self.assertEqual(upgraders.append.call_count, 2)
+        upgraders.assert_called_once_with({
             '__version__': 2,
             'attr': 'value',
-            'upgraders': ['2->4', '4->5'],
         })
-        self.assertEqual(vobject.__vers_values__, sch)
+        self.assertEqual(vobject.__vers_values__, values)
 
-    @mock.patch.object(vobj, '_call_upgrader',
-                       side_effect=fake_call_upgrader)
-    def test_setstate_upgrade_missing(self, mock_call_upgrader):
+    @mock.patch('vobj.converters.Converters')
+    def test_setstate_upgrade_missing(self, mock_Converters):
         class TestVObject(vobj.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
@@ -643,8 +589,12 @@ class TestVObject(unittest.TestCase):
             '__version__': 2,
             'attr': 'value',
         })
-        self.assertFalse(mock_call_upgrader.called)
-        self.assertFalse(sch.__setstate__.called)
+
+        upgraders = mock_Converters.return_value
+        mock_Converters.assert_called_once_with(
+            TestVObject.__vers_schemas__[4])
+        self.assertFalse(upgraders.append.called)
+        self.assertFalse(upgraders.called)
 
     @mock.patch.object(vobj.VObject, '__setstate__')
     def test_from_dict_abstract(self, mock_setstate):

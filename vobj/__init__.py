@@ -19,6 +19,7 @@ from vobj.attribute import Attribute
 from vobj.decorators import upgrader, downgrader
 from vobj.schema import Schema
 
+from vobj import converters
 from vobj.version import SmartVersion
 
 
@@ -32,54 +33,6 @@ class _EmptyClass(object):
     """
 
     pass
-
-
-class Downgrader(object):
-    """
-    Represent a downgrader that will be called to obtain a specific
-    schema.  This is called to regenerate a cached older-version
-    object.
-    """
-
-    def __init__(self, downgrader, schema):
-        """
-        Initialize a ``Downgrader``.
-
-        :param downgrader: The class method that will be called.
-        :param schema: The schema class to generate.
-        """
-
-        self.downgrader = downgrader
-        self.schema = schema
-
-    def __call__(self, state):
-        """
-        Called to regenerate the ``Schema`` object corresponding to an
-        older version of the versioned object.
-
-        :param state: A dictionary containing the current state.  This
-                      dictionary will be mutated.
-
-        :returns: A ``Schema`` object.
-        """
-
-        # Drop the __version__; we know state is a copy, so this is
-        # safe
-        del state['__version__']
-
-        # Call the downgrader
-        state = self.downgrader(state)
-
-        # Update the version in the resultant state
-        state['__version__'] = self.schema.__version__
-
-        # Now, let's construct the Schema object that will store this
-        # state
-        values = self.schema()
-        values.__setstate__(state)
-
-        # Return the result
-        return values
 
 
 class VObjectMeta(type):
@@ -133,7 +86,7 @@ class VObjectMeta(type):
         # Set up downgraders
         if last_schema:
             downgraders = dict(
-                (vers, Downgrader(down, versions[vers]))
+                (vers, converters.Converters(versions[vers], down))
                 for vers, down in last_schema.__vers_downgraders__.items()
             )
         else:
@@ -145,30 +98,6 @@ class VObjectMeta(type):
         namespace['__version__'] = SmartVersion(len(schemas), last_schema)
 
         return super(VObjectMeta, mcs).__new__(mcs, name, bases, namespace)
-
-
-def _call_upgrader(upgrader, state):
-    """
-    Call an upgrader.  Handles updating of the state's "__version__"
-    key.
-
-    :param upgrader: The upgrader method.
-    :param state: The state dictionary.
-
-    :returns: The upgraded state dictionary.
-    """
-
-    # Copy the state and drop its __version__...
-    state = state.copy()
-    del state['__version__']
-
-    # Call the upgrader
-    state = upgrader(state)
-
-    # Now, update the version in the resultant state
-    state['__version__'] = upgrader.im_self.__version__
-
-    return state
 
 
 class VObject(object):
@@ -353,7 +282,7 @@ class VObject(object):
 
         # Now, start with the desired schema and build up a pipeline
         # of upgraders
-        upgraders = []
+        upgraders = converters.Converters(target)
         while version != schema_vers:
             # Find the upgrader that most closely matches the target
             # version
@@ -374,14 +303,12 @@ class VObject(object):
                                 schema.__version__)
 
         # OK, we now have a pipeline of upgraders; call them in the
-        # proper order
-        for upgrader in reversed(upgraders):
-            state = _call_upgrader(upgrader, state)
+        # proper order and get our schema object
+        values = upgraders(state.copy())
 
         # We now have an appropriate state; generate the Schema
         # object and set our state
-        self.__vers_init__(target())
-        self.__vers_values__.__setstate__(state)
+        self.__vers_init__(values)
 
     to_dict = __getstate__
 
