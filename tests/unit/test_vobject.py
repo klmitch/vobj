@@ -13,34 +13,30 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import copy
-import operator
 import unittest
 
 import mock
 
-import vobj
+from vobj import decorators
+from vobj import proxy
+from vobj import schema
 from vobj import version
+from vobj import vobject
 
 
-class EmptyClass(object):
-    # Used to test __setstate__() on abstract Schemas
-    pass
-
-
-class TestVObjectMeta(unittest.TestCase):
+class VObjectMetaTest(unittest.TestCase):
     def test_empty(self):
         namespace = {
             '__module__': 'test_vobject',
         }
 
-        result = vobj.VObjectMeta('TestVObject', (object,), namespace)
+        result = vobject.VObjectMeta('TestVObject', (object,), namespace)
 
         self.assertEqual(result.__vers_schemas__, [])
         self.assertEqual(result.__version__, 0)
 
     def test_duplicate_version(self):
-        class TestSchema(vobj.Schema):
+        class TestSchema(schema.Schema):
             __version__ = 1
 
         namespace = {
@@ -49,14 +45,14 @@ class TestVObjectMeta(unittest.TestCase):
             'Schema2': TestSchema,
         }
 
-        self.assertRaises(TypeError, vobj.VObjectMeta, 'TestVObject',
+        self.assertRaises(TypeError, vobject.VObjectMeta, 'TestVObject',
                           (object,), namespace)
 
     def test_missing_base(self):
-        class TestSchema(vobj.Schema):
+        class TestSchema(schema.Schema):
             __version__ = 2
 
-            @vobj.upgrader
+            @decorators.upgrader
             def upgrader(cls, old):
                 pass
 
@@ -65,17 +61,17 @@ class TestVObjectMeta(unittest.TestCase):
             'Schema': TestSchema,
         }
 
-        self.assertRaises(TypeError, vobj.VObjectMeta, 'TestVObject',
+        self.assertRaises(TypeError, vobject.VObjectMeta, 'TestVObject',
                           (object,), namespace)
 
     def test_schema_gap(self):
-        class TestSchema1(vobj.Schema):
+        class TestSchema1(schema.Schema):
             __version__ = 1
 
-        class TestSchema3(vobj.Schema):
+        class TestSchema3(schema.Schema):
             __version__ = 3
 
-            @vobj.upgrader
+            @decorators.upgrader
             def upgrader(cls, old):
                 pass
 
@@ -85,18 +81,18 @@ class TestVObjectMeta(unittest.TestCase):
             'Schema3': TestSchema3,
         }
 
-        self.assertRaises(TypeError, vobj.VObjectMeta, 'TestVObject',
+        self.assertRaises(TypeError, vobject.VObjectMeta, 'TestVObject',
                           (object,), namespace)
 
     @mock.patch('vobj.converters.Converters', side_effect=lambda x, y: (x, y))
     def test_normal(self, mock_Converters):
-        class TestSchema1(vobj.Schema):
+        class TestSchema1(schema.Schema):
             __version__ = 1
 
-        class TestSchema2(vobj.Schema):
+        class TestSchema2(schema.Schema):
             __version__ = 2
 
-            @vobj.upgrader
+            @decorators.upgrader
             def upgrader(cls, old):
                 pass
 
@@ -104,10 +100,10 @@ class TestVObjectMeta(unittest.TestCase):
             '__module__': 'test_vobject',
             'Schema1': TestSchema1,
             'Schema2': TestSchema2,
-            'AbstractSchema': vobj.Schema,
+            'AbstractSchema': schema.Schema,
         }
 
-        result = vobj.VObjectMeta('TestVObject', (object,), namespace)
+        result = vobject.VObjectMeta('TestVObject', (object,), namespace)
 
         self.assertEqual(result.__vers_schemas__, [TestSchema1, TestSchema2])
         self.assertEqual(result.__vers_downgraders__, {})
@@ -117,28 +113,28 @@ class TestVObjectMeta(unittest.TestCase):
 
     @mock.patch('vobj.converters.Converters', side_effect=lambda x, y: (x, y))
     def test_downgraders(self, mock_Converters):
-        class TestSchema1(vobj.Schema):
+        class TestSchema1(schema.Schema):
             __version__ = 1
 
-        class TestSchema2(vobj.Schema):
+        class TestSchema2(schema.Schema):
             __version__ = 2
 
-            @vobj.upgrader
+            @decorators.upgrader
             def upgrader(cls, old):
                 pass
 
-        class TestSchema3(vobj.Schema):
+        class TestSchema3(schema.Schema):
             __version__ = 3
 
-            @vobj.upgrader
+            @decorators.upgrader
             def upgrader(cls, old):
                 pass
 
-            @vobj.downgrader(1)
+            @decorators.downgrader(1)
             def downgrader_1(cls, new):
                 pass
 
-            @vobj.downgrader(2)
+            @decorators.downgrader(2)
             def downgrader_2(cls, new):
                 pass
 
@@ -149,7 +145,7 @@ class TestVObjectMeta(unittest.TestCase):
             'Schema3': TestSchema3,
         }
 
-        result = vobj.VObjectMeta('TestVObject', (object,), namespace)
+        result = vobject.VObjectMeta('TestVObject', (object,), namespace)
 
         self.assertEqual(result.__vers_schemas__, [
             TestSchema1,
@@ -168,14 +164,14 @@ class TestVObjectMeta(unittest.TestCase):
         ])
 
 
-class TestVObject(unittest.TestCase):
+class VObjectTest(unittest.TestCase):
     def test_abstract_constructor(self):
-        self.assertRaises(TypeError, vobj.VObject)
+        self.assertRaises(TypeError, vobject.VObject)
 
     @mock.patch.object(version, 'SmartVersion')
-    @mock.patch.object(vobj.VObject, '__vers_set_values__')
+    @mock.patch.object(vobject.VObject, '__vers_set_values__')
     def test_init(self, mock_set_values, mock_SmartVersion):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         TestVObject.__vers_schemas__ = [
             mock.Mock(return_value=mock.Mock()),
@@ -194,45 +190,45 @@ class TestVObject(unittest.TestCase):
             2, schema, result)
 
     def test_setattr_delegated(self):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.MagicMock()
         sch.__contains__.return_value = True
         TestVObject.__vers_schemas__ = [
             mock.Mock(return_value=sch),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        vobject.attr = 'value'
+        obj.attr = 'value'
 
         sch.__contains__.assert_called_once_with('attr')
         self.assertEqual(sch.attr, 'value')
-        self.assertFalse('attr' in vobject.__dict__)
+        self.assertFalse('attr' in obj.__dict__)
 
     def test_setattr_undelegated(self):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.MagicMock(attr='schema')
         sch.__contains__.return_value = False
         TestVObject.__vers_schemas__ = [
             mock.Mock(return_value=sch),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        vobject.attr = 'value'
+        obj.attr = 'value'
 
         sch.__contains__.assert_called_once_with('attr')
         self.assertEqual(sch.attr, 'schema')
-        self.assertEqual(vobject.__dict__['attr'], 'value')
+        self.assertEqual(obj.__dict__['attr'], 'value')
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_abstract(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
-        vobject = EmptyClass()
-        vobject.__class__ = TestVObject
+        obj = vobject.EmptyClass()
+        obj.__class__ = TestVObject
 
-        self.assertRaises(TypeError, vobject.__setstate__, {
+        self.assertRaises(TypeError, obj.__setstate__, {
             '__version__': 1,
             'attr': 'value',
         })
@@ -240,30 +236,30 @@ class TestVObject(unittest.TestCase):
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_state_unversioned(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         TestVObject.__vers_schemas__ = [
             mock.Mock(return_value=sch, __version__=1),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        self.assertRaises(TypeError, vobject.__setstate__, {
+        self.assertRaises(TypeError, obj.__setstate__, {
             'attr': 'value',
         })
         self.assertFalse(mock_Converters.called)
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_state_lowversion(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         TestVObject.__vers_schemas__ = [
             mock.Mock(return_value=sch, __version__=1),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        self.assertRaises(TypeError, vobject.__setstate__, {
+        self.assertRaises(TypeError, obj.__setstate__, {
             '__version__': 0,
             'attr': 'value',
         })
@@ -271,7 +267,7 @@ class TestVObject(unittest.TestCase):
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_state_highversion(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         TestVObject.__vers_schemas__ = [
@@ -279,9 +275,9 @@ class TestVObject(unittest.TestCase):
             mock.Mock(__version__=2),
             mock.Mock(return_value=sch, __version__=3),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        self.assertRaises(TypeError, vobject.__setstate__, {
+        self.assertRaises(TypeError, obj.__setstate__, {
             '__version__': 4,
             'attr': 'value',
         })
@@ -289,7 +285,7 @@ class TestVObject(unittest.TestCase):
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_state_badversion(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         TestVObject.__vers_schemas__ = [
@@ -297,9 +293,9 @@ class TestVObject(unittest.TestCase):
             mock.Mock(__version__=2),
             mock.Mock(return_value=sch, __version__=3),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        self.assertRaises(TypeError, vobject.__setstate__, {
+        self.assertRaises(TypeError, obj.__setstate__, {
             '__version__': "bad",
             'attr': 'value',
         })
@@ -307,16 +303,16 @@ class TestVObject(unittest.TestCase):
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_exact(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         TestVObject.__vers_schemas__ = [
             mock.Mock(__version__=1),
             mock.Mock(return_value=sch, __version__=2),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        vobject.__setstate__({
+        obj.__setstate__({
             '__version__': 2,
             'attr': 'value',
         })
@@ -330,11 +326,11 @@ class TestVObject(unittest.TestCase):
             '__version__': 2,
             'attr': 'value',
         })
-        self.assertEqual(vobject.__vers_values__, values)
+        self.assertEqual(obj.__vers_values__, values)
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_upgrade(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         upgraders2 = {
@@ -358,9 +354,9 @@ class TestVObject(unittest.TestCase):
             mock.Mock(return_value=sch, __version__=5,
                       __vers_upgraders__=upgraders5),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        vobject.__setstate__({
+        obj.__setstate__({
             '__version__': 2,
             'attr': 'value',
         })
@@ -378,11 +374,11 @@ class TestVObject(unittest.TestCase):
             '__version__': 2,
             'attr': 'value',
         })
-        self.assertEqual(vobject.__vers_values__, values)
+        self.assertEqual(obj.__vers_values__, values)
 
     @mock.patch('vobj.converters.Converters')
     def test_setstate_upgrade_missing(self, mock_Converters):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         sch = mock.Mock(__setstate__=mock.Mock())
         upgraders2 = {
@@ -405,9 +401,9 @@ class TestVObject(unittest.TestCase):
             mock.Mock(return_value=sch, __version__=5,
                       __vers_upgraders__=upgraders5),
         ]
-        vobject = TestVObject()
+        obj = TestVObject()
 
-        self.assertRaises(TypeError, vobject.__setstate__, {
+        self.assertRaises(TypeError, obj.__setstate__, {
             '__version__': 2,
             'attr': 'value',
         })
@@ -418,14 +414,14 @@ class TestVObject(unittest.TestCase):
         self.assertFalse(upgraders.append.called)
         self.assertFalse(upgraders.called)
 
-    @mock.patch.object(vobj.VObject, '__setstate__')
+    @mock.patch.object(vobject.VObject, '__setstate__')
     def test_from_dict_abstract(self, mock_setstate):
-        self.assertRaises(TypeError, vobj.VObject.from_dict, 'values')
+        self.assertRaises(TypeError, vobject.VObject.from_dict, 'values')
         self.assertFalse(mock_setstate.called)
 
-    @mock.patch.object(vobj.VObject, '__setstate__')
+    @mock.patch.object(vobject.VObject, '__setstate__')
     def test_from_dict(self, mock_setstate):
-        class TestVObject(vobj.VObject):
+        class TestVObject(vobject.VObject):
             pass
         TestVObject.__vers_schemas__ = ['schema']
 
