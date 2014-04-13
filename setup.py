@@ -31,7 +31,7 @@ def readfile(filename):
 
 setup(
     name='vobj',
-    version='0.1.1',
+    version='0.2.0',
     author='Kevin L. Mitchell',
     author_email='kevin.mitchell@rackspace.com',
     url='https://github.com/klmitch/vobj',
@@ -40,10 +40,16 @@ setup(
     license='Apache License (2.0)',
     classifiers=[
         'Development Status :: 3 - Alpha',
-        'Environment :: Web Environment',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: Apache Software License',
+        'Operating System :: OS Independent',
         'Programming Language :: Python',
+        'Programming Language :: Python :: 2.6',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.3',
+        'Programming Language :: Python :: 3.4',
+        'Topic :: Database',
+        'Topic :: Internet',
     ],
     packages=['vobj'],
     install_requires=readreq('requirements.txt'),
